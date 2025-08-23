@@ -1,5 +1,7 @@
-// Firebase (ESM CDN)
+// Let Vite bundle styles (fixes GitHub Pages paths)
 import "./style.css";
+
+// Firebase (ESM CDN)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 import {
