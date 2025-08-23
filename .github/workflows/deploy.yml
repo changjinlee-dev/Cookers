@@ -1,3 +1,4 @@
+# .github/workflows/deploy.yml
 name: Build and Deploy
 
 on:
@@ -11,17 +12,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # ✅ Use npm install (since there's no package-lock.json)
-      - name: Install deps
-        run: npm install
+      # Create package-lock.json without installing deps
+      - name: Generate lockfile
+        run: npm i --package-lock-only
+
+      # Deterministic install using the generated lockfile
+      - name: Install deps (npm ci)
+        run: npm ci
 
       - name: Create .env from GitHub Secrets
         run: |
