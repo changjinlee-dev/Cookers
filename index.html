@@ -5,417 +5,336 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Room Quiz</title>
   <style>
-    :root{
-      --bg:#0f172a; /* slate-900 */
-      --card:#111827; /* gray-900 */
-      --muted:#94a3b8; /* slate-400 */
-      --primary:#22c55e; /* green-500 */
-      --danger:#ef4444; /* red-500 */
-      --accent:#3b82f6; /* blue-500 */
-      --radius:18px;
-    }
-    html,body{height:100%;}
-    body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:#e5e7eb;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,Helvetica,sans-serif;}
-    .container{max-width:1100px;margin:0 auto;padding:24px;display:grid;grid-template-columns:340px 1fr;gap:24px;}
-    .card{background:var(--card);border-radius:var(--radius);box-shadow:0 10px 30px rgba(0,0,0,.25);padding:18px;}
-    h1{font-size:28px;margin:0 0 8px 0}
-    h2{font-size:18px;margin:0 0 10px 0;color:#cbd5e1}
-    .btn{display:inline-flex;gap:8px;align-items:center;justify-content:center;border:none;border-radius:14px;padding:12px 16px;background:#1f2937;color:#f8fafc;font-weight:600;cursor:pointer;transition:.2s;}
-    .btn.primary{background:var(--accent);} .btn.success{background:var(--primary)} .btn.danger{background:var(--danger)}
+    :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--accent:#3b82f6;--ok:#22c55e;--bad:#ef4444}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0b1220,#0f172a);color:#e5e7eb;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,Helvetica,sans-serif}
+    .container{max-width:1100px;margin:0 auto;padding:24px;display:grid;grid-template-columns:320px 1fr;gap:24px}
+    .card{background:#111827;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:18px;min-height:70vh}
+    h1{margin:0 0 8px 0}
+    h2{margin:8px 0;color:#cbd5e1;font-size:18px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:12px;padding:12px 16px;background:#1f2937;color:#f8fafc;font-weight:700;cursor:pointer}
+    .btn.primary{background:var(--accent)} .btn.ok{background:var(--ok)} .btn.bad{background:var(--bad)}
     .btn:disabled{opacity:.5;cursor:not-allowed}
-    .stack{display:flex;flex-direction:column;gap:12px}
     .row{display:flex;gap:10px;align-items:center}
-    input,textarea{width:100%;background:#0b1020;border:1px solid #1f2937;color:#e5e7eb;border-radius:12px;padding:10px 12px;}
-    textarea{min-height:120px;resize:vertical}
-    .pill{display:inline-flex;align-items:center;gap:8px;background:#0b1020;border:1px solid #1f2937;padding:8px 10px;border-radius:999px;font-size:12px;color:#cbd5e1}
-    .list{display:flex;flex-direction:column;gap:10px;max-height:50vh;overflow:auto}
-    .list-item{display:flex;justify-content:space-between;align-items:center;background:#0b1020;border:1px solid #1f2937;border-radius:14px;padding:12px}
+    .stack{display:flex;flex-direction:column;gap:12px}
+    textarea,input{width:100%;background:#0b1020;border:1px solid #1f2937;color:#e5e7eb;border-radius:12px;padding:10px 12px}
+    textarea{min-height:160px;resize:vertical}
     .muted{color:var(--muted)}
-    .qbox{background:#0b1020;border:1px solid #1f2937;border-radius:16px;padding:16px;}
+    .list{display:flex;flex-direction:column;gap:10px;max-height:60vh;overflow:auto}
+    .item{display:flex;justify-content:space-between;align-items:center;background:#0b1020;border:1px solid #1f2937;border-radius:12px;padding:12px}
+    .qbox{background:#0b1020;border:1px solid #1f2937;border-radius:16px;padding:16px}
     .answers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-    .ans{padding:14px;background:#1f2937;border:none;border-radius:12px;color:#e5e7eb;font-weight:600;cursor:pointer}
-    .ans.correct{outline:2px solid var(--primary)}
-    .ans.wrong{outline:2px solid var(--danger)}
-    .center{display:flex;align-items:center;justify-content:center;height:100%;min-height:180px;color:#cbd5e1}
-    .footer{margin-top:18px;font-size:12px;color:#94a3b8}
+    .ans{padding:14px;background:#1f2937;border:none;border-radius:12px;color:#e5e7eb;font-weight:700;cursor:pointer}
+    .ans.correct{outline:2px solid var(--ok)} .ans.wrong{outline:2px solid var(--bad)}
+    .center{min-height:200px;display:flex;align-items:center;justify-content:center;color:#cbd5e1}
+    .hidden{display:none}
     @media (max-width:960px){.container{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- LEFT: Lobby / Room list / Create -->
-    <div class="card" id="left">
+    <!-- LEFT: Home / Host / Join -->
+    <div class="card">
       <h1>Room Quiz</h1>
-      <div class="muted" style="margin-bottom:16px">Create a room as host or join any open room. Everyone must answer before the quiz moves on.</div>
+      <div class="muted" style="margin-bottom:14px">Host pastes questions → create a room. Join shows all rooms. Everyone must answer before moving on.</div>
 
-      <div class="stack" id="authBox">
-        <div class="row">
-          <input id="displayName" placeholder="Your name (shown to others)"/>
-          <button class="btn success" id="saveNameBtn">Save</button>
-        </div>
-        <div class="muted" id="yourId"></div>
+      <div class="row" style="gap:12px">
+        <button class="btn ok" id="hostBtn">Host</button>
+        <button class="btn primary" id="joinBtn">Join</button>
       </div>
 
-      <hr style="border-color:#1f2937;margin:16px 0"/>
+      <!-- Host panel -->
+      <div class="stack hidden" id="hostPanel">
+        <h2>Provide up to 10 questions</h2>
+        <textarea id="hostQuestions" placeholder="Use this plain-text format (blank line between questions):
+1. Which is a vowel?
+A) A
+B) R
+C) S
+D) T
+Answer: A
 
-      <div class="stack" id="createBox">
-        <h2>Host · Create room</h2>
+2. 2+2=?
+A) 1
+B) 2
+C) 3
+D) 4
+Answer: D"></textarea>
         <div class="row">
-          <input id="roomTitle" placeholder="Room title (e.g. Math practice)"/>
-          <button class="btn primary" id="createBtn">Create</button>
+          <input id="roomTitle" placeholder="Optional room title (default: Quiz Room)"/>
+          <button class="btn ok" id="createFromQuestions">Create room</button>
         </div>
-        <div class="muted">No codes. Newly created rooms appear in the list below for everyone.</div>
       </div>
 
-      <hr style="border-color:#1f2937;margin:16px 0"/>
-
-      <h2>Available rooms</h2>
-      <div class="list" id="roomsList"></div>
-
-      <div class="footer">Built for GitHub Pages + Firebase Firestore (realtime). Add your Firebase config in the code.</div>
+      <!-- Join panel -->
+      <div class="stack hidden" id="joinPanel">
+        <h2>Available rooms</h2>
+        <div class="list" id="roomsList"></div>
+      </div>
+      <div class="muted" style="margin-top:auto">Static hosting friendly. Uses Firebase Firestore + Anonymous Auth.</div>
     </div>
 
-    <!-- RIGHT: Room view (host/participant) -->
-    <div class="card" id="right">
-      <div id="roomPane" class="stack"></div>
+    <!-- RIGHT: Room view -->
+    <div class="card">
+      <div id="roomPane" class="stack"><div class="center">Choose <b>Host</b> or <b>Join</b> to begin.</div></div>
     </div>
   </div>
 
-  <!-- Firebase SDKs (modular) -->
+  <!-- Firebase (modular SDKs) -->
   <script type="module">
-    // 1) FILL THESE IN with your Firebase project values (Settings → General → Your apps → Web app)
+    /* ===== STEP 1: Fill in your Firebase config ===== */
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "YOUR_AUTH_DOMAIN",
       projectId: "YOUR_PROJECT_ID",
       storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MSG_SENDER_ID",
+      messagingSenderId: "YOUR_SENDER_ID",
       appId: "YOUR_APP_ID"
     };
 
-    // --- DO NOT EDIT BELOW UNLESS YOU WANT TO ---
+    /* ===== Imports ===== */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getFirestore, collection, doc, addDoc, setDoc, getDoc, onSnapshot, serverTimestamp, query, where, orderBy, limit, runTransaction, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import {
+      getFirestore, collection, doc, addDoc, updateDoc, onSnapshot, runTransaction,
+      query, where, orderBy, limit, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+    /* ===== Init ===== */
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-
-    // Global UI refs
-    const displayNameInput = document.getElementById('displayName');
-    const saveNameBtn = document.getElementById('saveNameBtn');
-    const yourId = document.getElementById('yourId');
-    const createBtn = document.getElementById('createBtn');
-    const roomTitle = document.getElementById('roomTitle');
-    const roomsList = document.getElementById('roomsList');
-    const roomPane = document.getElementById('roomPane');
-
-    let currentUser = null; // {uid, displayName}
-    let currentRoomUnsub = null;
-    let roomsUnsub = null;
-
-    // Sign in anonymously on load
     signInAnonymously(auth).catch(console.error);
 
-    onAuthStateChanged(auth, async (user)=>{
-      if(!user) return;
-      currentUser = user;
-      yourId.textContent = `Your ID: ${user.uid.substring(0,8)}…`;
-      displayNameInput.value = user.displayName || '';
-      subscribeRooms();
-    });
+    /* ===== UI Refs ===== */
+    const hostBtn = document.getElementById('hostBtn');
+    const joinBtn = document.getElementById('joinBtn');
+    const hostPanel = document.getElementById('hostPanel');
+    const joinPanel = document.getElementById('joinPanel');
+    const hostQuestions = document.getElementById('hostQuestions');
+    const createFromQuestions = document.getElementById('createFromQuestions');
+    const roomsList = document.getElementById('roomsList');
+    const roomPane = document.getElementById('roomPane');
+    const roomTitle = document.getElementById('roomTitle');
 
-    saveNameBtn.onclick = async ()=>{
-      if(!currentUser) return;
-      await updateProfile(currentUser, { displayName: displayNameInput.value.trim() || 'Guest' });
-      alert('Saved name!');
+    let currentUser = null;
+    let roomsUnsub = null;
+    let roomUnsub = null;
+
+    onAuthStateChanged(auth, (u)=>{ if(u){ currentUser = u; } });
+
+    /* ===== Navigation ===== */
+    hostBtn.onclick = ()=>{ hostPanel.classList.remove('hidden'); joinPanel.classList.add('hidden'); };
+    joinBtn.onclick = ()=>{ hostPanel.classList.add('hidden'); joinPanel.classList.remove('hidden'); subscribeRooms(); };
+
+    /* ===== Parser: extract ONLY question, 4 options, correct answer ===== */
+    function parseQuestions(text){
+      const blocks = text.split(/\n\s*\n/).map(b=>b.trim()).filter(Boolean);
+      const out = [];
+      for(const block of blocks){
+        const lines = block.split(/\n/).map(l=>l.trim()).filter(Boolean);
+
+        // question line (strip leading "1. " etc.)
+        const qLine = (lines[0]||'').replace(/^\d+\.?\s*/, '');
+
+        // options A-D (strip "A) " / "A. " and remove any trailing notes)
+        const opts = [];
+        for(const L of ['A','B','C','D']){
+          const ln = lines.find(x => new RegExp(`^${L}[)\\.]\\s*`, 'i').test(x)) || '';
+          opts.push(
+            ln.replace(/^[A-Da-d][)\\.]\s*/, '')
+              .replace(/\s*[-–]\s*\d+%$/, '')       // drop percentages like "– 93%"
+              .replace(/\s*Explanation:.*/i, '')    // drop explanations if pasted
+              .trim()
+          );
+        }
+
+        // answer letter
+        const ansLine = lines.find(l => /^answer\s*:/i.test(l)) || '';
+        const letter = (ansLine.match(/[A-D]/i)||[null])[0];
+
+        if(!qLine || opts.some(o=>!o) || !letter) continue; // skip malformed
+        out.push({ q: qLine, options: opts, answer: {A:0,B:1,C:2,D:3}[letter.toUpperCase()] });
+      }
+      return out.slice(0, 10); // host adds 10 at a time
+    }
+
+    /* ===== Host: create room from pasted text ===== */
+    createFromQuestions.onclick = async ()=>{
+      const parsed = parseQuestions(hostQuestions.value);
+      if(parsed.length === 0){ alert('Could not parse questions. Check format.'); return; }
+
+      const ref = await addDoc(collection(db,'rooms'),{
+        title: (roomTitle.value.trim() || 'Quiz Room'),
+        createdAt: serverTimestamp(),
+        archived: false,
+        status: 'in_progress',        // lobby | in_progress | finished
+        hostId: currentUser.uid,
+        currentIndex: 0,
+        questions: parsed,
+        participants: {},             // uid -> { joinedAt }
+        answers: {},                  // uid -> {choice, at}
+        phase: 'question',            // question | reveal
+        revealAt: null
+      });
+
+      hostQuestions.value = ''; roomTitle.value = '';
+      joinRoom(ref.id, true);
     };
 
-    // --- Rooms list ---
+    /* ===== Join: list rooms (no ID codes) ===== */
     function subscribeRooms(){
       if(roomsUnsub) roomsUnsub();
-      const q = query(collection(db,'rooms'), where('archived','==',false), orderBy('createdAt','desc'), limit(20));
-      roomsUnsub = onSnapshot(q,(snap)=>{
+      const qRooms = query(collection(db,'rooms'),
+        where('archived','==',false), orderBy('createdAt','desc'), limit(50));
+      roomsUnsub = onSnapshot(qRooms, (snap)=>{
         roomsList.innerHTML = '';
         if(snap.empty){
-          const div = document.createElement('div');
-          div.className='muted';
-          div.textContent='No rooms yet — create one!';
-          roomsList.appendChild(div);
-          return;
+          const p = document.createElement('div'); p.className='muted'; p.textContent='No rooms yet.'; roomsList.appendChild(p); return;
         }
-        snap.forEach(docu=>{
-          const r = docu.data();
-          const row = document.createElement('div');
-          row.className='list-item';
-          row.innerHTML = `<div>
-              <div style="font-weight:700">${r.title || 'Untitled room'}</div>
-              <div class="muted">${r.status==='lobby'?'Lobby':'In progress'} · ${Object.keys(r.participants||{}).length} joined</div>
-            </div>`;
-          const joinBtn = document.createElement('button');
-          joinBtn.className='btn';
-          joinBtn.textContent='Join';
-          joinBtn.onclick = ()=> joinRoom(docu.id);
-          row.appendChild(joinBtn);
-          roomsList.appendChild(row);
+        snap.forEach(d=>{
+          const r = d.data();
+          const row = document.createElement('div'); row.className='item';
+          row.innerHTML = `<div><b>${r.title||'Room'}</b><div class="muted">${r.status==='in_progress'?'In progress':'Lobby/Finished'} · ${Object.keys(r.participants||{}).length} joined</div></div>`;
+          const btn = document.createElement('button'); btn.className='btn'; btn.textContent='Join';
+          btn.onclick = ()=> joinRoom(d.id);
+          row.appendChild(btn); roomsList.appendChild(row);
         });
       });
     }
 
-    // Create room (host)
-    createBtn.onclick = async ()=>{
-      const title = roomTitle.value.trim() || 'New room';
-      const ref = await addDoc(collection(db,'rooms'), {
-        title,
-        createdAt: serverTimestamp(),
-        archived:false,
-        status:'lobby', // lobby | in_progress | finished
-        hostId: currentUser.uid,
-        currentIndex: -1,
-        questions: [], // array of {q, options:[a,b,c,d], answer}
-        participants: {}, // uid -> {name, joinedAt}
-        answers: {}, // current question answers: uid -> {choice, at}
-      });
-      joinRoom(ref.id, true);
-    };
-
-    // Join room
+    /* ===== Join a room (and register as participant) ===== */
     async function joinRoom(roomId, asHost=false){
-      // attach participant
-      const roomRef = doc(db,'rooms',roomId);
-      const name = (auth.currentUser.displayName||'Guest');
+      const ref = doc(db,'rooms',roomId);
       await runTransaction(db, async (tx)=>{
-        const snap = await tx.get(roomRef);
-        if(!snap.exists()) throw new Error('Room missing');
+        const snap = await tx.get(ref); if(!snap.exists()) throw new Error('Missing room');
         const r = snap.data();
-        const participants = r.participants||{};
-        participants[currentUser.uid] = {name, joinedAt: Date.now()};
-        tx.update(roomRef,{ participants });
+        const participants = r.participants || {};
+        participants[currentUser.uid] = { joinedAt: Date.now() };
+        tx.update(ref, { participants });
       });
-      openRoom(roomId, asHost);
+      openRoom(ref, asHost);
     }
 
-    // Render room
-    function openRoom(roomId, isHost=false){
-      if(currentRoomUnsub) currentRoomUnsub();
-      roomPane.innerHTML = '<div class="muted">Loading room…</div>';
-      const roomRef = doc(db,'rooms',roomId);
-      currentRoomUnsub = onSnapshot(roomRef, (snap)=>{
-        if(!snap.exists()){ roomPane.innerHTML = '<div class="muted">Room deleted.</div>'; return; }
+    /* ===== Core quiz flow ===== */
+    function openRoom(roomRef, asHost=false){
+      if(roomUnsub) roomUnsub();
+      roomUnsub = onSnapshot(roomRef, (snap)=>{
+        if(!snap.exists()){ roomPane.innerHTML = '<div class="center">Room not found</div>'; return; }
         const room = snap.data();
-        const iAmHost = room.hostId === currentUser.uid || isHost;
-        renderRoom(roomRef.id, room, iAmHost);
+        const iAmHost = room.hostId === (currentUser && currentUser.uid) || asHost;
+        renderRoom(roomRef, room, iAmHost);
       });
     }
 
-    // Utilities
-    function el(tag, attrs={}, children=[]) {
-      const e = document.createElement(tag);
-      Object.entries(attrs).forEach(([k,v])=>{ if(k==='class') e.className=v; else if(k==='text') e.textContent=v; else e.setAttribute(k,v); });
-      children.forEach(c=> e.appendChild(c));
-      return e;
-    }
-
-    async function submitAnswer(roomId, index, choice){
-      const roomRef = doc(db,'rooms',roomId);
+    async function submitAnswer(roomRef, index, choice){
       await runTransaction(db, async (tx)=>{
-        const snap = await tx.get(roomRef);
-        if(!snap.exists()) throw 'missing';
-        const r = snap.data();
-        if(r.currentIndex !== index) return; // ignore stale
-        const answers = r.answers||{};
-        answers[currentUser.uid] = {choice, at: Date.now()};
-        tx.update(roomRef,{ answers });
+        const s = await tx.get(roomRef); if(!s.exists()) return;
+        const r = s.data();
+        if(r.currentIndex !== index || r.phase !== 'question') return;
+        const answers = r.answers || {};
+        answers[currentUser.uid] = { choice, at: Date.now() };
+        tx.update(roomRef, { answers });
       });
-      // try advance after submit
+      // After submitting, try advancing (may enter reveal)
       maybeAdvance(roomRef);
     }
 
     async function maybeAdvance(roomRef){
       await runTransaction(db, async (tx)=>{
-        const snap = await tx.get(roomRef);
-        if(!snap.exists()) return;
-        const r = snap.data();
-        if(r.status !== 'in_progress') return;
-        const participants = r.participants||{};
-        const activeCount = Object.keys(participants).length;
-        const answers = r.answers||{};
-        const answeredCount = Object.keys(answers).length;
-        if(answeredCount < activeCount) return; // not everyone answered
+        const s = await tx.get(roomRef); if(!s.exists()) return;
+        const r = s.data(); if(r.status!=='in_progress') return;
+        const total = Object.keys(r.participants||{}).length;
+        const answered = Object.keys(r.answers||{}).length;
 
-        // everyone answered → move to next question
-        const nextIndex = r.currentIndex + 1;
-        if(nextIndex >= r.questions.length){
-          // Out of questions. Go to lobby-more state for host to add more or finish.
-          tx.update(roomRef,{ status:'finished' });
-        } else {
-          tx.update(roomRef,{ currentIndex: nextIndex, answers:{} });
+        if(r.phase === 'question'){
+          if(answered < total) return; // wait for everyone
+          tx.update(roomRef, { phase:'reveal', revealAt: Date.now() });
+          return;
+        }
+        if(r.phase === 'reveal'){
+          const elapsed = Date.now() - (r.revealAt||0);
+          if(elapsed < 3000) return; // 3s reveal window
+          const next = r.currentIndex + 1;
+          if(next >= (r.questions||[]).length){
+            tx.update(roomRef, { status:'finished', phase:'question', answers:{}, revealAt:null });
+          } else {
+            tx.update(roomRef, { currentIndex: next, phase:'question', answers:{}, revealAt:null });
+          }
         }
       });
     }
 
-    async function startQuiz(roomId){
-      const roomRef = doc(db,'rooms',roomId);
-      await updateDoc(roomRef, { status:'in_progress', currentIndex:0, answers:{} });
-    }
-
-    async function addTenQuestions(roomId, parsed){
-      const roomRef = doc(db,'rooms',roomId);
-      await runTransaction(db, async (tx)=>{
-        const snap = await tx.get(roomRef);
-        const r = snap.data();
-        const qs = r.questions || [];
-        tx.update(roomRef,{ questions: qs.concat(parsed.slice(0,10)) , status: r.status==='finished' && qs.length===r.questions.length ? 'in_progress' : r.status });
-      });
-    }
-
-    async function archiveRoom(roomId){
-      await updateDoc(doc(db,'rooms',roomId), { archived:true, status:'finished' });
-    }
-
-    function parseBulk(text){
-      // Accept simple line-based format:
-      // Q?\nA) ...\nB) ...\nC) ...\nD) ...\nANSWER: A\n--- (blank line between questions)
-      const blocks = text.split(/\n\s*\n/).map(s=>s.trim()).filter(Boolean);
-      const results = [];
-      for(const b of blocks){
-        const lines = b.split(/\n/).map(s=>s.trim()).filter(Boolean);
-        if(lines.length < 6) continue;
-        const q = lines[0].replace(/^\d+\.?\s*/,'');
-        const opts = [];
-        for(let k=1;k<=4;k++){
-          opts.push(lines[k].replace(/^([A-Da-d])[\)\.]\s*/,''));
-        }
-        const ansLine = lines.find(l=>/^answer\s*:/i.test(l))||'';
-        const letter = (ansLine.match(/[A-Da-d]/)||['A'])[0].toUpperCase();
-        const answer = {A:0,B:1,C:2,D:3}[letter];
-        results.push({ q, options:opts, answer });
-      }
-      return results;
-    }
-
-    function renderRoom(roomId, room, iAmHost){
+    /* ===== UI: render room ===== */
+    function renderRoom(roomRef, room, iAmHost){
       roomPane.innerHTML = '';
 
-      // Header
-      const header = el('div', {class:'row'}, [
-        el('div',{class:'pill'}, [el('span',{text: room.title || 'Room'})]),
-        el('div',{class:'pill'}, [el('span',{text: iAmHost? 'You are the host' : 'Participant'})]),
-        el('div',{class:'pill'}, [el('span',{text: `${Object.keys(room.participants||{}).length} joined`})]),
-        el('div',{style:'flex:1'}),
-        el('button',{class:'btn danger'},[])
-      ]);
-      header.lastChild.textContent = 'Leave';
-      header.lastChild.onclick = ()=>{ if(currentRoomUnsub) currentRoomUnsub(); roomPane.innerHTML=''; };
-      roomPane.appendChild(header);
+      const head = document.createElement('div');
+      head.className = 'row';
+      head.innerHTML = `<div class="muted">${room.title || 'Room'} · ${Object.keys(room.participants||{}).length} players</div>`;
+      const leave = document.createElement('button'); leave.className='btn bad'; leave.textContent='Leave';
+      leave.onclick = ()=>{ if(roomUnsub) roomUnsub(); roomPane.innerHTML='<div class="center">Left room.</div>'; };
+      head.appendChild(leave);
+      roomPane.appendChild(head);
 
-      // Host controls: add questions (10 at a time)
+      // Host controls for adding more later
       if(iAmHost){
-        const hostBox = el('div',{class:'stack'});
-        hostBox.appendChild(el('h2',{text:'Host controls'}));
-        const hint = el('div',{class:'muted',text:'Paste up to 10 questions. Format shown below. When everyone answers, the quiz auto-advances.'});
-        hostBox.appendChild(hint);
-
-        const ta = el('textarea');
-        ta.placeholder = `Example format (blank line between questions):\n1. Which is a vowel?\nA) A\nB) R\nC) S\nD) T\nAnswer: A\n\n2. 2+2=?\nA) 1\nB) 2\nC) 3\nD) 4\nAnswer: D`;
-        hostBox.appendChild(ta);
-
-        const parseBtn = el('button',{class:'btn success',text:'Add up to 10 questions'});
-        parseBtn.onclick = async ()=>{
-          const parsed = parseBulk(ta.value);
-          if(parsed.length===0){ alert('Could not parse. Check the format.'); return; }
-          await addTenQuestions(roomId, parsed);
-          ta.value='';
-          alert(`Added ${Math.min(parsed.length,10)} question(s).`);
+        const hostBox = document.createElement('div'); hostBox.className = 'stack';
+        const ta = document.createElement('textarea');
+        ta.placeholder = 'Paste 10 more questions in the same format.';
+        const addBtn = document.createElement('button'); addBtn.className='btn ok'; addBtn.textContent='Add up to 10';
+        addBtn.onclick = async ()=>{
+          const parsed = parseQuestions(ta.value);
+          if(parsed.length===0){ alert('Nothing parsed'); return; }
+          await runTransaction(db, async (tx)=>{
+            const s = await tx.get(roomRef); const r = s.data();
+            const qs = (r.questions||[]).concat(parsed);
+            tx.update(roomRef, { questions: qs, status: r.status==='finished' ? 'in_progress':'in_progress' });
+          });
+          ta.value=''; alert('Added!');
         };
-        hostBox.appendChild(parseBtn);
-
-        const startBtn = el('button',{class:'btn primary',text: room.status==='in_progress' ? 'Restart from Q1' : 'Start quiz'});
-        startBtn.onclick = ()=> startQuiz(roomId);
-        hostBox.appendChild(startBtn);
-
-        const endBtn = el('button',{class:'btn',text:'Archive room'});
-        endBtn.onclick = ()=> archiveRoom(roomId);
-        hostBox.appendChild(endBtn);
-
+        const restart = document.createElement('button'); restart.className='btn primary'; restart.textContent='Restart from Q1';
+        restart.onclick = async ()=> await updateDoc(roomRef, { status:'in_progress', currentIndex:0, answers:{}, phase:'question', revealAt:null });
+        hostBox.appendChild(ta); hostBox.appendChild(addBtn); hostBox.appendChild(restart);
         roomPane.appendChild(hostBox);
       }
 
-      // Status views
-      if(room.status==='lobby'){
-        const box = el('div',{class:'center'});
-        box.textContent = iAmHost ? 'Add questions and press Start to begin.' : 'Waiting for host to start…';
-        roomPane.appendChild(box);
-        return;
-      }
-
       if(room.status==='finished'){
-        const box = el('div',{class:'center'});
-        box.innerHTML = iAmHost ? 'Out of questions. Paste 10 more and press Start to continue.' : 'Waiting for the host to add more questions…';
-        roomPane.appendChild(box);
-        return;
+        const box = document.createElement('div'); box.className='center'; box.textContent = iAmHost ? 'Out of questions. Add more to continue.' : 'Waiting for host to add more questions…';
+        roomPane.appendChild(box); return;
       }
 
-      // In-progress: current question
       const idx = room.currentIndex;
-      if(idx<0 || !room.questions[idx]){
-        const box = el('div',{class:'center'});
-        box.textContent = 'Waiting for first question…';
-        roomPane.appendChild(box);
-        return;
-      }
+      const q = (room.questions||[])[idx];
+      if(!q){ const box = document.createElement('div'); box.className='center'; box.textContent='Waiting for first question…'; roomPane.appendChild(box); return; }
 
-      const q = room.questions[idx];
-      const answered = (room.answers||{})[currentUser.uid]?.choice ?? null;
+      const inReveal = room.phase==='reveal';
+      const answered = (room.answers||{})[currentUser?.uid]?.choice ?? null;
 
-      const qwrap = el('div',{class:'qbox'});
-      qwrap.appendChild(el('div',{class:'muted',text:`Question ${idx+1} of ${room.questions.length}`}));
-      qwrap.appendChild(el('div',{style:'font-size:20px;margin:6px 0 10px 0;font-weight:700',text:q.q}));
+      const box = document.createElement('div'); box.className='qbox';
+      const small = document.createElement('div'); small.className='muted'; small.textContent = `Question ${idx+1} of ${room.questions.length}`;
+      const text = document.createElement('div'); text.style.cssText='font-size:20px;margin:6px 0 10px 0;font-weight:700'; text.textContent = q.q;
+      const answers = document.createElement('div'); answers.className='answers';
 
-      const answers = el('div',{class:'answers'});
-      q.options.forEach((opt, i)=>{
-        const b = el('button',{class:'ans',text:`${['A','B','C','D'][i]}. ${opt}`});
-        b.disabled = answered!==null;
-        b.onclick = ()=> submitAnswer(roomId, idx, i);
-        if(answered!==null){
-          if(i===q.answer) b.classList.add('correct');
-          if(i===answered && answered!==q.answer) b.classList.add('wrong');
-        }
+      [0,1,2,3].forEach(i=>{
+        const b = document.createElement('button'); b.className='ans'; b.textContent = `${['A','B','C','D'][i]}. ${q.options[i]}`;
+        b.disabled = answered!==null || inReveal;
+        b.onclick = ()=> submitAnswer(roomRef, idx, i);
+        if(inReveal){ if(i===q.answer) b.classList.add('correct'); if(i===answered && answered!==q.answer) b.classList.add('wrong'); }
         answers.appendChild(b);
       });
-      qwrap.appendChild(answers);
 
-      // Below answers, show small live indicator of who has answered
-      const who = Object.keys(room.participants||{});
-      const answeredUids = new Set(Object.keys(room.answers||{}));
-      const grid = el('div',{class:'row'});
-      who.forEach(uid=>{
-        const pill = el('div',{class:'pill'});
-        const name = room.participants[uid]?.name||'Guest';
-        pill.textContent = `${name} ${answeredUids.has(uid)?'✓':''}`;
-        grid.appendChild(pill);
-      });
-      qwrap.appendChild(el('div',{style:'height:8px'}));
-      qwrap.appendChild(grid);
+      const counts = document.createElement('div'); counts.className='muted';
+      counts.textContent = `Answered: ${Object.keys(room.answers||{}).length}/${Object.keys(room.participants||{}).length}`;
 
-      if(iAmHost){
-        const forceBtn = el('button',{class:'btn',text:'Force next (host)'})
-        forceBtn.onclick = async ()=>{
-          const roomRef = doc(db,'rooms',roomId);
-          await runTransaction(db, async (tx)=>{
-            const snap = await tx.get(roomRef);
-            const r = snap.data();
-            const nextIndex = r.currentIndex + 1;
-            if(nextIndex >= r.questions.length) tx.update(roomRef,{ status:'finished' });
-            else tx.update(roomRef,{ currentIndex: nextIndex, answers:{} });
-          });
-        };
-        qwrap.appendChild(el('div',{style:'height:10px'}));
-        qwrap.appendChild(forceBtn);
+      box.appendChild(small); box.appendChild(text); box.appendChild(answers); box.appendChild(counts);
+      if(inReveal){
+        const note = document.createElement('div'); note.className='muted'; note.style.marginTop='8px'; note.textContent='Showing correct answer…';
+        box.appendChild(note);
+        setTimeout(()=> maybeAdvance(roomRef), 1200); // nudge the auto-advance loop
       }
-
-      roomPane.appendChild(qwrap);
+      roomPane.appendChild(box);
     }
   </script>
 </body>
