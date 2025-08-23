@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Room Quiz (No Backend)</title>
+  <title>Kahoot-Style Quiz (Realm Web)</title>
   <style>
     :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--accent:#3b82f6;--ok:#22c55e;--bad:#ef4444}
     *{box-sizing:border-box}
@@ -29,53 +29,55 @@
     .ans.correct{outline:2px solid var(--ok)} .ans.wrong{outline:2px solid var(--bad)}
     .center{min-height:200px;display:flex;align-items:center;justify-content:center;color:#cbd5e1}
     .hidden{display:none}
-    .banner{padding:10px;border:1px solid #334155;border-radius:10px;background:#0b1020;color:#cbd5e1}
+    .count{font-size:48px;font-weight:900;text-align:center}
     @media (max-width:960px){.container{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- LEFT: Home / Host / Join -->
+    <!-- LEFT: Host / Join -->
     <div class="card">
-      <h1>Room Quiz</h1>
-      <div class="muted" style="margin-bottom:14px">No backend. Syncs across tabs in the <b>same browser</b> using BroadcastChannel + localStorage.</div>
+      <h1>Kahoot-Style Quiz</h1>
+      <div class="muted" style="margin-bottom:14px">MongoDB Atlas App Services (Realm Web). No visible user IDs or room codes. Rooms appear in the list when published.</div>
 
       <div class="row" style="gap:12px">
         <button class="btn ok" id="hostBtn">Host</button>
         <button class="btn primary" id="joinBtn">Join</button>
       </div>
 
-      <!-- Host panel -->
+      <!-- Host setup -->
       <div class="stack hidden" id="hostPanel">
-        <div class="banner">Hosting a room here makes your tab the <b>host authority</b>. Keep it open so participants in other tabs can join and progress.</div>
-        <h2>Provide up to 10 questions</h2>
-        <textarea id="hostQuestions" placeholder="Use this plain-text format (blank line between questions):
-1. Which is a vowel?
-A) A
-B) R
-C) S
-D) T
-Answer: A
+        <h2>Create Room</h2>
+        <input id="roomTitle" placeholder="Room title (default: Quiz Room)"/>
+        <input id="maxPlayers" type="number" min="1" max="200" placeholder="Participant count (includes host)"/>
+        <textarea id="hostQuestions" placeholder="Paste questions (blank line between):
+1. Question text?
+A) Option A
+B) Option B
+C) Option C
+D) Option D
+Answer: B
+Explanation: why B is correct
 
-2. 2+2=?
-A) 1
-B) 2
-C) 3
-D) 4
-Answer: D"></textarea>
+2. Next question...
+A) ...
+B) ...
+C) ...
+D) ...
+Answer: D
+Explanation: ..."></textarea>
         <div class="row">
-          <input id="roomTitle" placeholder="Optional room title (default: Quiz Room)"/>
-          <button class="btn ok" id="createFromQuestions">Create room</button>
+          <button class="btn ok" id="createRoom">Create & Publish</button>
         </div>
       </div>
 
-      <!-- Join panel -->
+      <!-- Join list -->
       <div class="stack hidden" id="joinPanel">
-        <h2>Available rooms (this browser)</h2>
+        <h2>Available Rooms</h2>
         <div class="list" id="roomsList"></div>
       </div>
 
-      <div class="muted" style="margin-top:auto">For cross-device real-time, a backend or signaling service is required. This build avoids Firestore entirely.</div>
+      <div class="muted" style="margin-top:auto">Reminder: For production, configure Realm rules so only the host client can modify room control fields.</div>
     </div>
 
     <!-- RIGHT: Room view -->
@@ -84,269 +86,275 @@ Answer: D"></textarea>
     </div>
   </div>
 
+  <!-- Realm Web SDK -->
+  <script src="https://unpkg.com/realm-web/dist/bundle.iife.js"></script>
   <script>
-    /* =========================
-       Minimal no-backend runtime
-       ========================= */
-    const roomsKey = 'quiz_rooms_v1';
-    const bcLobby = new BroadcastChannel('quiz_lobby');
-    const roomChannels = new Map(); // roomId -> BroadcastChannel
+    // ====== CONFIG ======
+    const REALM_APP_ID = "your-realm-app-id"; // <-- replace in Atlas App Services
+    const DB_NAME = "quiz";
 
+    // ====== Client identity (ephemeral, not shown) ======
+    const clientId = (localStorage.getItem('quiz_client_id')) || (()=>{
+      const id = (self.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+      localStorage.setItem('quiz_client_id', id); return id;
+    })();
+
+    // ====== UI Refs ======
     const hostBtn = document.getElementById('hostBtn');
     const joinBtn = document.getElementById('joinBtn');
     const hostPanel = document.getElementById('hostPanel');
     const joinPanel = document.getElementById('joinPanel');
-    const hostQuestions = document.getElementById('hostQuestions');
-    const createFromQuestions = document.getElementById('createFromQuestions');
     const roomsList = document.getElementById('roomsList');
     const roomPane = document.getElementById('roomPane');
     const roomTitle = document.getElementById('roomTitle');
+    const maxPlayers = document.getElementById('maxPlayers');
+    const hostQuestions = document.getElementById('hostQuestions');
+    const createRoomBtn = document.getElementById('createRoom');
 
-    // This tab's participant id
-    const myId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-
-    // Navigation
     hostBtn.onclick = ()=>{ hostPanel.classList.remove('hidden'); joinPanel.classList.add('hidden'); };
-    joinBtn.onclick = ()=>{ hostPanel.classList.add('hidden'); joinPanel.classList.remove('hidden'); renderRoomsList(); };
+    joinBtn.onclick = ()=>{ hostPanel.classList.add('hidden'); joinPanel.classList.remove('hidden'); refreshRooms(); };
 
-    /* ---------- Storage helpers ---------- */
-    function loadRooms(){
-      try { return JSON.parse(localStorage.getItem(roomsKey)||'[]'); } catch { return []; }
-    }
-    function saveRooms(rooms){ localStorage.setItem(roomsKey, JSON.stringify(rooms)); }
-    function upsertRoom(room){
-      const rooms = loadRooms();
-      const i = rooms.findIndex(r=>r.id===room.id);
-      if(i>=0) rooms[i]=room; else rooms.unshift(room);
-      saveRooms(rooms);
-      bcLobby.postMessage({type:'rooms_updated'});
+    // ====== Realm boot ======
+    const app = new Realm.App({ id: REALM_APP_ID });
+    let user = null, mongo = null, db = null, Rooms=null, Questions=null, Answers=null;
+
+    async function ensureUser(){
+      if(!user) user = await app.logIn(Realm.Credentials.anonymous());
+      if(!mongo){ mongo = app.currentUser.mongoClient("mongodb-atlas"); db = mongo.db(DB_NAME); Rooms = db.collection('rooms'); Questions = db.collection('questions'); Answers = db.collection('answers'); }
+      return user;
     }
 
-    /* ---------- Parser ---------- */
+    // ====== Host: create & publish room ======
+    createRoomBtn.onclick = async ()=>{
+      await ensureUser();
+      const title = (roomTitle.value.trim()||'Quiz Room');
+      const max = Math.max(1, parseInt(maxPlayers.value||'0',10));
+      const parsed = parseQuestions(hostQuestions.value);
+      if(!max){ alert('Enter participant count'); return; }
+      if(parsed.length===0){ alert('Paste questions first'); return; }
+
+      // 1) create room (status: lobby/public)
+      const r = await Rooms.insertOne({
+        title, maxParticipants:max, participants: {[clientId]: {joinedAt:new Date(), ready:false}},
+        createdAt: new Date(), status:'lobby', phase:'setup', // setup->lobby->countdown->question->reveal->wait_next
+        hostId: clientId,
+        currentIndex: 0,
+        answers: {}, // {clientId:{choice,at}}
+        nextAcks: {}, // {clientId:true}
+        revealAt: null
+      });
+      const roomId = r.insertedId; // internal only
+
+      // 2) insert questions
+      const docs = parsed.map((q,i)=>({ roomId, index:i, ...q }));
+      await Questions.insertMany(docs);
+
+      // 3) publish: phase->lobby so others can see
+      await Rooms.updateOne({ _id: roomId }, { $set: { phase:'lobby', status:'lobby' } });
+
+      // open room as host
+      openRoom(roomId, true);
+      roomTitle.value=''; maxPlayers.value=''; hostQuestions.value='';
+    };
+
+    // ====== Join list ======
+    async function refreshRooms(){
+      await ensureUser();
+      const rooms = await Rooms.find({ status: { $in:['lobby','in_progress'] } }, { sort: { createdAt: -1 }, limit: 50 });
+      roomsList.innerHTML='';
+      if(rooms.length===0){ const div=document.createElement('div'); div.className='muted'; div.textContent='No public rooms yet.'; roomsList.appendChild(div); return; }
+      rooms.forEach(r=>{
+        const row = document.createElement('div'); row.className='item';
+        const joined = r.participants ? Object.keys(r.participants).length : 0;
+        row.innerHTML = `<div><b>${r.title||'Room'}</b><div class="muted">${r.status} · ${joined}/${r.maxParticipants} joined</div></div>`;
+        const btn = document.createElement('button'); btn.className='btn'; btn.textContent='Join'; btn.onclick = ()=> joinRoom(r._id);
+        row.appendChild(btn); roomsList.appendChild(row);
+      });
+    }
+
+    async function joinRoom(roomId){
+      await ensureUser();
+      // add participant (idempotent)
+      await Rooms.updateOne({ _id: roomId }, { $set: { ["participants."+clientId]: { joinedAt:new Date(), ready:false } }, $setOnInsert:{} });
+      openRoom(roomId, false);
+    }
+
+    // ====== Change stream watcher per room ======
+    async function watchRoom(roomId){
+      await ensureUser();
+      const pipeline = [{ $match: { "fullDocument._id": roomId } }];
+      for await (const change of Rooms.watch(pipeline)){
+        const room = change.fullDocument;
+        renderRoom(roomId, room);
+      }
+    }
+
+    // ====== Room lifecycle helpers ======
+    async function startCountdown(roomId){
+      await Rooms.updateOne({ _id: roomId, phase:'lobby' }, { $set: { phase:'countdown', countdownEndsAt: new Date(Date.now()+3000), status:'in_progress' } });
+    }
+
+    async function openQuestion(roomId){
+      await Rooms.updateOne({ _id: roomId, phase:'countdown' }, { $set: { phase:'question', answers:{}, nextAcks:{} } });
+    }
+
+    async function submitAnswer(roomId, index, choice){
+      await Rooms.updateOne({ _id: roomId, phase:'question' }, { $set: { ["answers."+clientId]: { choice, at:new Date(), index } } });
+    }
+
+    async function revealIfAllAnswered(room){
+      const total = Object.keys(room.participants||{}).length;
+      const answered = Object.keys(room.answers||{}).length;
+      if(room.phase==='question' && total>0 && answered>=total){
+        await Rooms.updateOne({ _id: room._id, phase:'question' }, { $set: { phase:'reveal', revealAt: new Date() } });
+      }
+    }
+
+    async function ackNext(roomId){
+      await Rooms.updateOne({ _id: roomId, phase:'reveal' }, { $set: { ["nextAcks."+clientId]: true } });
+    }
+
+    async function advanceIfAllAck(room){
+      const total = Object.keys(room.participants||{}).length;
+      const acked = Object.keys(room.nextAcks||{}).length;
+      if(room.phase==='reveal' && total>0 && acked>=total){
+        const totalQs = await Questions.count({ roomId: room._id });
+        const next = room.currentIndex + 1;
+        if(next >= totalQs){
+          await Rooms.updateOne({ _id: room._id, phase:'reveal' }, { $set: { status:'finished', phase:'wait_more', answers:{}, nextAcks:{}, revealAt:null } });
+        } else {
+          await Rooms.updateOne({ _id: room._id, phase:'reveal' }, { $set: { currentIndex: next, phase:'question', answers:{}, nextAcks:{}, revealAt:null } });
+        }
+      }
+    }
+
+    async function hostAddMore(roomId, text){
+      const extra = parseQuestions(text);
+      if(extra.length===0){ alert('Nothing parsed'); return; }
+      await Questions.insertMany(extra.map((q,i)=>({ roomId, index: Date.now()+i, ...q })));
+      await Rooms.updateOne({ _id: roomId }, { $set: { status:'in_progress', phase:'question', answers:{}, nextAcks:{}, revealAt:null } });
+    }
+
+    // ====== Open & render room ======
+    let watching = false;
+    async function openRoom(roomId, iAmHost){
+      roomPane.innerHTML = '<div class="center">Loading room…</div>';
+      await ensureUser();
+      // Initial fetch
+      const room = await Rooms.findOne({ _id: roomId });
+      renderRoom(roomId, room, iAmHost);
+      if(!watching){ watching=true; watchRoom(roomId); }
+    }
+
+    async function renderRoom(roomId, room, iAmHost){
+      if(!room) { roomPane.innerHTML = '<div class="center">Room missing</div>'; return; }
+      roomPane.innerHTML = '';
+
+      const joined = room.participants ? Object.keys(room.participants).length : 0;
+      const header = document.createElement('div'); header.className='row';
+      header.innerHTML = `<div class="muted">${room.title||'Room'} · ${joined}/${room.maxParticipants} players</div>`;
+      const leave = document.createElement('button'); leave.className='btn bad'; leave.textContent='Leave'; leave.onclick=()=>{ roomPane.innerHTML='<div class="center">Left room.</div>'; };
+      header.appendChild(leave); roomPane.appendChild(header);
+
+      // Auto-transitions
+      if(room.phase==='lobby'){
+        // rule 7: start when all joined (including host)
+        if(joined >= room.maxParticipants && iAmHost){ await startCountdown(roomId); }
+        const box = document.createElement('div'); box.className='center'; box.textContent = `Waiting for players ${joined}/${room.maxParticipants}…`;
+        roomPane.appendChild(box); return;
+      }
+      if(room.phase==='countdown'){
+        const t = (new Date(room.countdownEndsAt||Date.now())).getTime();
+        const wrap = document.createElement('div'); wrap.className='center';
+        const span = document.createElement('div'); span.className='count'; wrap.appendChild(span); roomPane.appendChild(wrap);
+        const timer = setInterval(()=>{
+          const left = Math.ceil((t - Date.now())/1000);
+          span.textContent = left>0 ? left : 'Go!';
+          if(left<=0){ clearInterval(timer); if(iAmHost) openQuestion(roomId); }
+        }, 200);
+        return;
+      }
+
+      // Fetch current question
+      const q = await Questions.findOne({ roomId: room._id, index: room.currentIndex });
+      if(!q){ const box=document.createElement('div'); box.className='center'; box.textContent='Waiting for first question…'; roomPane.appendChild(box); return; }
+
+      const inReveal = room.phase==='reveal';
+      const myAns = room.answers?.[clientId]?.choice ?? null;
+
+      const qbox = document.createElement('div'); qbox.className='qbox';
+      qbox.appendChild(el('div',{class:'muted',text:`Question ${room.currentIndex+1}` }));
+      qbox.appendChild(el('div',{style:'font-size:20px;margin:6px 0 10px 0;font-weight:700',text:q.q }));
+
+      const answers = document.createElement('div'); answers.className='answers';
+      q.options.forEach((opt,i)=>{
+        const b = document.createElement('button'); b.className='ans'; b.textContent = `${['A','B','C','D'][i]}. ${opt}`;
+        b.disabled = inReveal || myAns!==null;
+        b.onclick = ()=> submitAnswer(roomId, room.currentIndex, i);
+        if(inReveal){ if(i===q.answer) b.classList.add('correct'); if(i===myAns && myAns!==q.answer) b.classList.add('wrong'); }
+        answers.appendChild(b);
+      });
+      qbox.appendChild(answers);
+
+      // counts + reveal explanation
+      const counts = document.createElement('div'); counts.className='muted';
+      const answered = Object.keys(room.answers||{}).length;
+      counts.textContent = `Answered: ${answered}/${joined}`;
+      qbox.appendChild(counts);
+
+      if(inReveal){
+        qbox.appendChild(el('div',{style:'height:8px'}));
+        qbox.appendChild(el('div',{class:'muted',text:`Correct: ${['A','B','C','D'][q.answer]}. ${q.options[q.answer]}` }));
+        if(q.explanation){ qbox.appendChild(el('div',{style:'margin-top:6px',text:`Explanation: ${q.explanation}`})); }
+        const nextBtn = document.createElement('button'); nextBtn.className='btn primary'; nextBtn.style.marginTop='10px'; nextBtn.textContent='Next';
+        nextBtn.onclick = ()=> ackNext(roomId);
+        qbox.appendChild(nextBtn);
+        // try advance
+        await advanceIfAllAck(room);
+      } else {
+        // try reveal when all answered
+        await revealIfAllAnswered(room);
+      }
+
+      // Host add-more UI when finished
+      if(room.status==='wait_more' && iAmHost){
+        const hostBox = document.createElement('div'); hostBox.className='stack'; hostBox.style.marginTop='10px';
+        const ta = document.createElement('textarea'); ta.placeholder='Provide more questions (same format)…';
+        const addBtn = document.createElement('button'); addBtn.className='btn ok'; addBtn.textContent='Add & Continue';
+        addBtn.onclick = ()=> hostAddMore(roomId, ta.value);
+        hostBox.appendChild(ta); hostBox.appendChild(addBtn);
+        roomPane.appendChild(hostBox);
+      }
+
+      roomPane.appendChild(qbox);
+    }
+
+    function el(tag, attrs={}, children=[]) { const e = document.createElement(tag); Object.entries(attrs).forEach(([k,v])=>{ if(k==='class') e.className=v; else if(k==='text') e.textContent=v; else e.setAttribute(k,v); }); (children||[]).forEach(c=> e.appendChild(c)); return e; }
+
+    // ====== Parser (with Explanation) ======
     function parseQuestions(text){
       const blocks = text.split(/\n\s*\n/).map(b=>b.trim()).filter(Boolean);
       const out = [];
       for(const block of blocks){
         const lines = block.split(/\n/).map(l=>l.trim()).filter(Boolean);
-        const qLine = (lines[0]||'').replace(/^\d+\.?\s*/, '');
+        if(lines.length<6) continue;
+        const q = lines[0].replace(/^\d+\.?\s*/, '');
         const opts = [];
         for(const L of ['A','B','C','D']){
           const ln = lines.find(x => new RegExp(`^${L}[)\\.]\\s*`, 'i').test(x)) || '';
-          opts.push(
-            ln.replace(/^[A-Da-d][)\\.]\s*/, '')
-              .replace(/\s*[-–]\s*\d+%$/, '')
-              .replace(/\s*Explanation:.*/i, '')
-              .trim()
-          );
+          opts.push( ln.replace(/^[A-Da-d][)\\.]\s*/, '').trim() );
         }
-        const ansLine = lines.find(l => /^answer\s*:/i.test(l)) || '';
+        const ansLine = lines.find(l=>/^answer\s*:/i.test(l))||'';
         const letter = (ansLine.match(/[A-D]/i)||[null])[0];
-        if(!qLine || opts.some(o=>!o) || !letter) continue;
-        out.push({ q: qLine, options: opts, answer: {A:0,B:1,C:2,D:3}[letter.toUpperCase()] });
+        const explanation = (lines.find(l=>/^explanation\s*:/i.test(l))||'').replace(/^explanation\s*:\s*/i,'');
+        if(!letter) continue;
+        out.push({ q, options:opts, answer:{A:0,B:1,C:2,D:3}[letter.toUpperCase()], explanation });
       }
-      return out.slice(0,10);
+      return out;
     }
 
-    /* ---------- Lobby (list rooms) ---------- */
-    function renderRoomsList(){
-      const rooms = loadRooms().filter(r=>!r.archived);
-      roomsList.innerHTML = '';
-      if(rooms.length===0){ const div=document.createElement('div'); div.className='muted'; div.textContent='No rooms yet.'; roomsList.appendChild(div); return; }
-      rooms.forEach(r=>{
-        const row = document.createElement('div'); row.className='item';
-        row.innerHTML = `<div><b>${r.title||'Room'}</b><div class="muted">${r.status==='in_progress'?'In progress':r.status} · ${Object.keys(r.participants||{}).length} joined</div></div>`;
-        const btn = document.createElement('button'); btn.className='btn'; btn.textContent='Join'; btn.onclick=()=> joinRoom(r.id);
-        row.appendChild(btn); roomsList.appendChild(row);
-      });
-    }
-    bcLobby.onmessage = (ev)=>{ if(ev.data?.type==='rooms_updated') renderRoomsList(); };
-    window.addEventListener('storage', (e)=>{ if(e.key===roomsKey) renderRoomsList(); });
-
-    /* ---------- Host create ---------- */
-    createFromQuestions.onclick = ()=>{
-      const parsed = parseQuestions(hostQuestions.value);
-      if(parsed.length===0){ alert('Could not parse questions.'); return; }
-      const id = 'room_'+Math.random().toString(36).slice(2);
-      const room = {
-        id,
-        title: (roomTitle.value.trim()||'Quiz Room'),
-        createdAt: Date.now(),
-        archived:false,
-        status:'in_progress',
-        hostId: myId,
-        currentIndex:0,
-        questions: parsed,
-        participants: {}, // pid->{joinedAt}
-        answers: {},      // pid->{choice,at}
-        phase:'question',
-        revealAt:null,
-        hostHeartbeat: Date.now()
-      };
-      upsertRoom(room);
-      // start acting as host authority for this room
-      hostRoom(id);
-      openRoom(id, true);
-      hostQuestions.value=''; roomTitle.value='';
-    };
-
-    /* ---------- Room channels & authority ---------- */
-    function getRoomChannel(roomId){
-      if(!roomChannels.has(roomId)) roomChannels.set(roomId, new BroadcastChannel('quiz_room_'+roomId));
-      return roomChannels.get(roomId);
-    }
-
-    function hostRoom(roomId){
-      const ch = getRoomChannel(roomId);
-      // Host listens for join/answer and updates state in localStorage then broadcasts full state
-      ch.onmessage = (ev)=>{
-        const msg = ev.data||{};
-        let rooms = loadRooms();
-        const i = rooms.findIndex(r=>r.id===roomId);
-        if(i<0) return;
-        const r = rooms[i];
-        if(r.hostId !== myId) return; // only current host tab processes
-        if(msg.type==='join'){ r.participants[msg.pid] = { joinedAt: Date.now() }; }
-        if(msg.type==='answer'){
-          if(r.phase!=='question' || r.currentIndex!==msg.index) return;
-          r.answers[msg.pid] = { choice: msg.choice, at: Date.now() };
-        }
-        // Advance logic
-        const total = Object.keys(r.participants||{}).length;
-        const answered = Object.keys(r.answers||{}).length;
-        if(r.phase==='question' && total>0 && answered>=total){ r.phase='reveal'; r.revealAt=Date.now(); }
-        if(r.phase==='reveal' && r.revealAt && (Date.now()-r.revealAt)>=3000){
-          const next = r.currentIndex+1;
-          if(next >= (r.questions||[]).length){ r.status='finished'; r.phase='question'; r.answers={}; r.revealAt=null; }
-          else { r.currentIndex=next; r.phase='question'; r.answers={}; r.revealAt=null; }
-        }
-        r.hostHeartbeat = Date.now();
-        rooms[i]=r; saveRooms(rooms);
-        ch.postMessage({type:'state', room:r});
-        bcLobby.postMessage({type:'rooms_updated'});
-      };
-
-      // Host heartbeat interval & auto-advance tick
-      const tick = setInterval(()=>{
-        let rooms = loadRooms();
-        const i = rooms.findIndex(r=>r.id===roomId);
-        if(i<0){ clearInterval(tick); return; }
-        const r = rooms[i];
-        if(r.hostId !== myId){ clearInterval(tick); return; }
-        // auto-advance in reveal phase
-        if(r.phase==='reveal' && r.revealAt && (Date.now()-r.revealAt)>=3000){
-          const next = r.currentIndex+1;
-          if(next >= (r.questions||[]).length){ r.status='finished'; r.phase='question'; r.answers={}; r.revealAt=null; }
-          else { r.currentIndex=next; r.phase='question'; r.answers={}; r.revealAt=null; }
-        }
-        r.hostHeartbeat = Date.now();
-        rooms[i]=r; saveRooms(rooms);
-        ch.postMessage({type:'state', room:r});
-        bcLobby.postMessage({type:'rooms_updated'});
-      }, 500);
-
-      // Mark this tab is hosting this room
-      window.addEventListener('beforeunload', ()=>{
-        // optional: transfer host? For simplicity we just keep last state; other tabs won't advance.
-      });
-    }
-
-    /* ---------- Join / Open room ---------- */
-    function joinRoom(roomId){
-      const ch = getRoomChannel(roomId);
-      ch.postMessage({type:'join', pid: myId});
-      openRoom(roomId, false);
-    }
-
-    function openRoom(roomId, iAmHost){
-      const ch = getRoomChannel(roomId);
-      ch.onmessage = (ev)=>{
-        const msg = ev.data||{};
-        if(msg.type==='state' && msg.room && msg.room.id===roomId){
-          renderRoom(msg.room, iAmHost);
-        }
-      };
-      // Render immediately from localStorage (may be slightly stale)
-      const r = loadRooms().find(x=>x.id===roomId);
-      if(r) renderRoom(r, iAmHost);
-    }
-
-    function submitAnswer(roomId, index, choice){
-      const ch = getRoomChannel(roomId);
-      ch.postMessage({type:'answer', pid: myId, index, choice});
-    }
-
-    /* ---------- UI: render room ---------- */
-    function renderRoom(room, iAmHost){
-      roomPane.innerHTML = '';
-      const head = document.createElement('div'); head.className='row';
-      const hbOld = (Date.now() - (room.hostHeartbeat||0)) > 3000;
-      head.innerHTML = `<div class="muted">${room.title||'Room'} · ${Object.keys(room.participants||{}).length} players ${hbOld? '· <span style="color:#fbbf24">Host inactive?</span>':''}</div>`;
-      const leave = document.createElement('button'); leave.className='btn bad'; leave.textContent='Leave'; leave.onclick = ()=>{ roomPane.innerHTML='<div class="center">Left room.</div>'; };
-      head.appendChild(leave); roomPane.appendChild(head);
-
-      if(room.status==='finished'){
-        const box = document.createElement('div'); box.className='center'; box.textContent = iAmHost ? 'Out of questions. Add more to continue.' : 'Waiting for host to add more questions…';
-        roomPane.appendChild(box); return;
-      }
-
-      const idx = room.currentIndex; const q = (room.questions||[])[idx];
-      if(!q){ const box = document.createElement('div'); box.className='center'; box.textContent='Waiting for first question…'; roomPane.appendChild(box); return; }
-
-      const inReveal = room.phase==='reveal';
-
-      const box = document.createElement('div'); box.className='qbox';
-      const small = document.createElement('div'); small.className='muted'; small.textContent = `Question ${idx+1} of ${room.questions.length}`;
-      const text = document.createElement('div'); text.style.cssText='font-size:20px;margin:6px 0 10px 0;font-weight:700'; text.textContent = q.q;
-      const answers = document.createElement('div'); answers.className='answers';
-
-      [0,1,2,3].forEach(i=>{
-        const b = document.createElement('button'); b.className='ans'; b.textContent = `${['A','B','C','D'][i]}. ${q.options[i]}`;
-        b.disabled = inReveal; // can answer only during question phase
-        b.onclick = ()=> submitAnswer(room.id, idx, i);
-        if(inReveal){ if(i===q.answer) b.classList.add('correct'); }
-        answers.appendChild(b);
-      });
-
-      const counts = document.createElement('div'); counts.className='muted';
-      counts.textContent = `Answered: ${Object.keys(room.answers||{}).length}/${Object.keys(room.participants||{}).length}`;
-
-      box.appendChild(small); box.appendChild(text); box.appendChild(answers); box.appendChild(counts);
-      if(inReveal){
-        const note = document.createElement('div'); note.className='muted'; note.style.marginTop='8px'; note.textContent='Showing correct answer…'; box.appendChild(note);
-      }
-
-      // Host controls (add more / restart)
-      if(iAmHost){
-        const hostBox = document.createElement('div'); hostBox.className='stack'; hostBox.style.marginTop='10px';
-        const ta = document.createElement('textarea'); ta.placeholder='Paste 10 more questions in the same format.';
-        const addBtn = document.createElement('button'); addBtn.className='btn ok'; addBtn.textContent='Add up to 10';
-        addBtn.onclick = ()=>{
-          const extra = parseQuestions(ta.value); if(extra.length===0){ alert('Nothing parsed'); return; }
-          const rooms = loadRooms(); const i = rooms.findIndex(r=>r.id===room.id); if(i<0) return;
-          const r = rooms[i]; if(r.hostId!==myId){ alert('Only host tab can add questions.'); return; }
-          r.questions = (r.questions||[]).concat(extra); r.status='in_progress'; saveRooms(rooms); getRoomChannel(room.id).postMessage({type:'state', room:r}); bcLobby.postMessage({type:'rooms_updated'}); ta.value='';
-        };
-        const restart = document.createElement('button'); restart.className='btn primary'; restart.textContent='Restart from Q1';
-        restart.onclick = ()=>{
-          const rooms = loadRooms(); const i = rooms.findIndex(r=>r.id===room.id); if(i<0) return;
-          const r = rooms[i]; if(r.hostId!==myId){ alert('Only host tab can restart.'); return; }
-          r.status='in_progress'; r.currentIndex=0; r.answers={}; r.phase='question'; r.revealAt=null; saveRooms(rooms); getRoomChannel(room.id).postMessage({type:'state', room:r});
-        };
-        hostBox.appendChild(ta); hostBox.appendChild(addBtn); hostBox.appendChild(restart); roomPane.appendChild(hostBox);
-      }
-
-      roomPane.appendChild(box);
-    }
-
-    /* =========================
-       Tiny self-tests (dev console)
-       ========================= */
-    ;(function tests(){
-      const sample = `1. Q?\nA) a\nB) b\nC) c\nD) d\nAnswer: C`;
-      const parsed = parseQuestions(sample);
-      console.assert(parsed.length===1 && parsed[0].answer===2 && parsed[0].options[2]==='c', 'parseQuestions basic test failed');
-    })();
-
+    // Initial auth to allow join list
+    ensureUser().then(refreshRooms).catch(console.error);
   </script>
 </body>
 </html>
