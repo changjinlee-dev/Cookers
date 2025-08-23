@@ -19,8 +19,9 @@ jobs:
         with:
           node-version: 18
 
+      # ✅ Use npm install (since there's no package-lock.json)
       - name: Install deps
-        run: npm ci
+        run: npm install
 
       - name: Create .env from GitHub Secrets
         run: |
