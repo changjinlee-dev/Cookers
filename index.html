@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Room Quiz (Firebase)</title>
+  <script type="module" crossorigin src="/Cookers/assets/index-BPjXg9x-.js"></script>
+  <link rel="stylesheet" crossorigin href="/Cookers/assets/index-B1IOlZiC.css">
+</head>
+<body>
+  <div class="container">
+    <!-- LEFT -->
+    <div class="card">
+      <h1>Room Quiz</h1>
+      <div class="muted" style="margin-bottom:14px">
+        Realtime with Firebase (Anonymous Auth + Firestore). No visible codes.
+      </div>
+
+      <div class="row" style="gap:12px">
+        <button class="btn ok" id="hostBtn">Host</button>
+        <button class="btn primary" id="joinBtn">Join</button>
+      </div>
+
+      <!-- Host -->
+      <div class="stack hidden" id="hostPanel">
+        <h2>Create Room</h2>
+        <input id="roomTitle" placeholder="Room title (default: Quiz Room)" />
+        <input id="maxPlayers" type="number" min="1" max="200" placeholder="Participant count (includes host)" />
+        <textarea id="hostQuestions" placeholder="Paste questions (blank line between):
+1. Which ... ?
+A) ...
+B) ...
+C) ...
+D) ...
+Answer: B
+Explanation: because ...
+
+2. Next question...
+A) ...
+B) ...
+C) ...
+D) ...
+Answer: D
+Explanation: ..."></textarea>
+        <div class="row"><button class="btn ok" id="createRoom">Create & Publish</button></div>
+      </div>
+
+      <!-- Join -->
+      <div class="stack hidden" id="joinPanel">
+        <h2>Available Rooms</h2>
+        <div class="list" id="roomsList"></div>
+      </div>
+
+      <div class="muted" style="margin-top:auto">
+        For production: tighten Firestore rules so only the host can advance.
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="card">
+      <div id="roomPane" class="stack">
+        <div class="center">Choose <b>Host</b> or <b>Join</b> to begin.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vite entry (CSS is imported inside main.js) -->
+</body>
+</html>
